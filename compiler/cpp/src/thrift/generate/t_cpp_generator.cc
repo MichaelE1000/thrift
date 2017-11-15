@@ -1616,6 +1616,8 @@ void t_cpp_generator::generate_service(t_service* tservice) {
               << "namespace apache { namespace thrift { namespace async {" << endl
               << "class TAsyncChannel;" << endl << "}}}" << endl;
   }
+  f_header_ << "#include <boost/make_shared.hpp>" << endl;
+  f_header_ << "#include <boost/shared_ptr.hpp>" << endl;
   f_header_ << "#include <thrift/TDispatchProcessor.h>" << endl;
   if (gen_cob_style_) {
     f_header_ << "#include <thrift/async/TAsyncDispatchProcessor.h>" << endl;
@@ -2169,7 +2171,14 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
   indent_up();
   if (style != "Cob") {
     f_header_ << indent() << service_name_ << style << "Client" << short_suffix << "(" << prot_ptr
-              << " prot) ";
+		<< " prot";
+	if (style == "Concurrent") {
+		f_header_ << ", boost::shared_ptr<::apache::thrift::async::TConcurrentClientSyncInfo> sync = boost::make_shared<::apache::thrift::async::TConcurrentClientSyncInfo>()"
+			<< ") : sync_(sync) ";
+	}
+	else {
+		f_header_ << ") ";
+	}
 
     if (extends.empty()) {
       f_header_ << "{" << endl;
@@ -2182,7 +2191,15 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     }
 
     f_header_ << indent() << service_name_ << style << "Client" << short_suffix << "(" << prot_ptr
-              << " iprot, " << prot_ptr << " oprot) ";
+		<< " iprot, " << prot_ptr << " oprot";
+	if (style == "Concurrent") {
+		f_header_ << ", boost::shared_ptr<::apache::thrift::async::TConcurrentClientSyncInfo> sync = boost::make_shared<::apache::thrift::async::TConcurrentClientSyncInfo>()"
+			<< ") : sync_(sync) ";
+	}
+	else {
+		f_header_ << ") ";
+	}
+	
     if (extends.empty()) {
       f_header_ << "{" << endl;
       f_header_ << indent() << "  setProtocol" << short_suffix << "(iprot,oprot);" << endl
@@ -2328,7 +2345,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
 
     if (style == "Concurrent") {
       f_header_ <<
-        indent() << "::apache::thrift::async::TConcurrentClientSyncInfo sync_;"<<endl;
+        indent() << "boost::shared_ptr<::apache::thrift::async::TConcurrentClientSyncInfo> sync_;"<<endl;
     }
     indent_down();
   }
@@ -2434,7 +2451,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
       string cseqidVal = "0";
       if (style == "Concurrent") {
         if (!(*f_iter)->is_oneway()) {
-          cseqidVal = "this->sync_.generateSeqId()";
+          cseqidVal = "this->sync_->generateSeqId()";
         }
       }
       // Serialize the request
@@ -2442,7 +2459,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
         indent() << "int32_t cseqid = " << cseqidVal << ";" << endl;
       if(style == "Concurrent") {
         out <<
-          indent() << "::apache::thrift::async::TConcurrentSendSentry sentry(&this->sync_);" << endl;
+          indent() << "::apache::thrift::async::TConcurrentSendSentry sentry(this->sync_.get());" << endl;
       }
       if (style == "Cob") {
         out <<
@@ -2507,7 +2524,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
             endl <<
             indent() << "// the read mutex gets dropped and reacquired as part of waitForWork()" << endl <<
             indent() << "// The destructor of this sentry wakes up other clients" << endl <<
-            indent() << "::apache::thrift::async::TConcurrentRecvSentry sentry(&this->sync_, seqid);" << endl;
+            indent() << "::apache::thrift::async::TConcurrentRecvSentry sentry(this->sync_.get(), seqid);" << endl;
         }
         if (style == "Cob" && !gen_no_client_completion_) {
           out << indent() << "bool completed = false;" << endl << endl << indent() << "try {";
@@ -2517,7 +2534,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
         if (style == "Concurrent") {
           out <<
             indent() << "while(true) {" << endl <<
-            indent() << "  if(!this->sync_.getPending(fname, mtype, rseqid)) {" << endl;
+            indent() << "  if(!this->sync_->getPending(fname, mtype, rseqid)) {" << endl;
           indent_up();
           indent_up();
         }
@@ -2661,10 +2678,10 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
           out <<
             indent() << "  }" << endl <<
             indent() << "  // seqid != rseqid" << endl <<
-            indent() << "  this->sync_.updatePending(fname, mtype, rseqid);" << endl <<
+            indent() << "  this->sync_->updatePending(fname, mtype, rseqid);" << endl <<
             endl <<
             indent() << "  // this will temporarily unlock the readMutex, and let other clients get work done" << endl <<
-            indent() << "  this->sync_.waitForWork(seqid);" << endl <<
+            indent() << "  this->sync_->waitForWork(seqid);" << endl <<
             indent() << "} // end while(true)" << endl;
         }
         if (style == "Cob" && !gen_no_client_completion_) {
